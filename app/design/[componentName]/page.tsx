@@ -2,6 +2,7 @@ import React from "react";
 import { notFound } from "next/navigation";
 import path from "path";
 import fs from "fs/promises";
+import SandpackDisplay from "../../../components/SandpackDisplay"; // Adjusted path
 
 // Define a type for the component module
 type ComponentModule = {
@@ -14,11 +15,13 @@ export default async function DesignComponentPage({
   params: { componentName: string };
 }) {
   // Await params as suggested by the error message.
-  // If params is not a promise, await will resolve immediately with the value.
   const resolvedParams = await params;
   const routeComponentName = resolvedParams.componentName; // e.g., "demobutton"
   let actualComponentName: string | null = null;
-  let ComponentToShow: React.ComponentType<any> | null = null;
+  // ComponentToShow is still needed for the direct preview if we keep it, or for type checking.
+  // For Sandpack, we primarily need the code string.
+  // let ComponentToShow: React.ComponentType<any> | null = null;
+  let componentCodeString: string | null = null;
 
   try {
     const designDirPath = path.join(process.cwd(), "components/design");
@@ -45,39 +48,83 @@ export default async function DesignComponentPage({
       return; // Ensure notFound stops execution here
     }
 
-    // Dynamically import the component using the actual file name
-    const componentModule = (await import(
-      `@/components/design/${actualComponentName}`
-    )) as ComponentModule;
-    ComponentToShow = componentModule.default;
+    // Dynamically import the component using the actual file name (still useful for metadata or if we want a non-Sandpack preview too)
+    // const componentModule = (await import(
+    //   `@/components/design/${actualComponentName}`
+    // )) as ComponentModule;
+    // ComponentToShow = componentModule.default;
+
+    // Read the component's code for Sandpack
+    const componentFilePath = path.join(
+      process.cwd(),
+      "components/design",
+      `${actualComponentName}.tsx`
+    );
+    componentCodeString = await fs.readFile(componentFilePath, "utf-8");
   } catch (error) {
     console.error(
-      `Failed to load component ${actualComponentName || routeComponentName}:`,
+      `Failed to load or read component ${
+        actualComponentName || routeComponentName
+      }:`,
       error
     );
     notFound(); // Triggers 404 page
     return; // Ensure notFound stops execution here
   }
 
-  if (!ComponentToShow) {
-    // This case should ideally be caught by the !actualComponentName check or import error
+  // if (!ComponentToShow) { // If we remove ComponentToShow for direct preview
+  //   notFound();
+  //   return;
+  // }
+  if (!componentCodeString) {
+    // Check if code string was loaded
+    console.error(
+      `Component code for "${actualComponentName}" could not be read.`
+    );
     notFound();
     return;
   }
 
-  // Use actualComponentName for display and import paths if available, otherwise fallback (though less likely now)
-  const displayComponentName =
-    actualComponentName ||
-    routeComponentName.charAt(0).toUpperCase() + routeComponentName.slice(1);
+  // Use actualComponentName for display and import paths
+  const displayComponentName = actualComponentName; // Should be guaranteed to be non-null here
 
-  const componentDescription = `This is a brief description for the ${displayComponentName} component. It showcases its basic functionality and usage.`;
-  const usageCode = `import ${displayComponentName} from '@/components/design/${displayComponentName}';
+  const componentDescription = `This is a brief description for the ${displayComponentName} component. It showcases its basic functionality and usage. Interact with the code below!`;
 
-export default function MyPage() {
+  // Sandpack files configuration
+  const sandpackFiles = {
+    // Entry point for Sandpack, uses the component
+    "/App.tsx": `import React from 'react';
+import ${displayComponentName} from './${displayComponentName}'; // Sandpack internal path
+// You might want to add a global stylesheet if your components rely on it
+// import './styles.css'; 
+
+export default function App() {
   return (
-    <${displayComponentName} />
+    <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100%' }}>
+      <${displayComponentName} />
+    </div>
   );
-}`;
+}`,
+    // The actual component code, making sure the filename matches the import in App.tsx
+    [`/${displayComponentName}.tsx`]: {
+      code: componentCodeString,
+      readOnly: false, // Allow users to tinker with the component code itself
+      active: true, // Make this file active by default
+    },
+    // Example of a global stylesheet for Sandpack, if needed
+    // "/styles.css": {
+    //   code: \`body { font-family: sans-serif; }\`,
+    //   hidden: true,
+    // },
+  };
+
+  // const usageCode = \`import ${displayComponentName} from '@/components/design/${displayComponentName}';
+
+  // export default function MyPage() {
+  //   return (
+  //     <${displayComponentName} />
+  //   );
+  // }\`;
 
   return (
     <div style={{ padding: "20px" }}>
@@ -90,32 +137,15 @@ export default function MyPage() {
         <p>{componentDescription}</p>
       </section>
 
-      <section style={{ marginBottom: "30px" }}>
-        <h2 style={{ fontSize: "1.5em", marginBottom: "10px" }}>Preview</h2>
-        <div
-          style={{
-            border: "1px solid #eee",
-            padding: "20px",
-            borderRadius: "5px",
-          }}
-        >
-          <ComponentToShow />
-        </div>
-      </section>
-
-      <section>
-        <h2 style={{ fontSize: "1.5em", marginBottom: "10px" }}>Usage</h2>
-        <pre
-          style={{
-            backgroundColor: "#f5f5f5",
-            padding: "15px",
-            borderRadius: "5px",
-            overflowX: "auto",
-          }}
-        >
-          <code>{usageCode}</code>
-        </pre>
-      </section>
+      <SandpackDisplay
+        sandpackFiles={sandpackFiles}
+        displayComponentName={displayComponentName}
+      />
+      {/* 
+        The old preview and usage sections are replaced by Sandpack.
+        If you still want a static preview outside Sandpack, you'd need ComponentToShow.
+        For now, we rely entirely on Sandpack.
+      */}
     </div>
   );
 }
