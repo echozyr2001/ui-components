@@ -44,7 +44,6 @@ export default async function DesignComponentPage({
       console.error(
         `Component file for "${routeComponentName}" not found in components/design.`
       );
-      notFound();
       return; // Ensure notFound stops execution here
     }
 
@@ -88,6 +87,53 @@ export default async function DesignComponentPage({
   // Use actualComponentName for display and import paths
   const displayComponentName = actualComponentName; // Should be guaranteed to be non-null here
 
+  let processedComponentCode = componentCodeString;
+  let customSetup: Record<string, any> | undefined = undefined;
+
+  // Specific modifications for Header component
+  if (actualComponentName === "Header") {
+    customSetup = {
+      dependencies: {
+        "framer-motion": "latest", // Assuming motion/react is framer-motion
+      },
+    };
+    // Modify component code for Sandpack
+    if (processedComponentCode) {
+      // Replace framer-motion import path
+      processedComponentCode = processedComponentCode.replace(
+        /from "motion\/react";/g,
+        'from "framer-motion";'
+      );
+
+      // Replace next/link
+      processedComponentCode = processedComponentCode.replace(
+        /import Link from "next\/link";/g,
+        '// import Link from "next/link";'
+      );
+      // Replace <Link ...> with <a ...> - basic replacement
+      // More robust regex might be needed for complex Link props
+      processedComponentCode = processedComponentCode.replace(
+        /<Link([^>]*?)>/g,
+        "<a$1>"
+      );
+      processedComponentCode = processedComponentCode.replace(
+        /<\/Link>/g,
+        "</a>"
+      );
+    }
+  }
+
+  // Ensure a default export for Sandpack's App.tsx if the original component doesn't have one
+  if (
+    processedComponentCode &&
+    !componentCodeString.includes("export default")
+  ) {
+    // Check original string for "export default"
+    // Add a default export to the processed code if it's a named export
+    // Assumes the main named export has the same name as the file (displayComponentName)
+    processedComponentCode += `\n\nexport default ${displayComponentName};`;
+  }
+
   const componentDescription = `This is a brief description for the ${displayComponentName} component. It showcases its basic functionality and usage. Interact with the code below!`;
 
   // Sandpack files configuration
@@ -107,7 +153,7 @@ export default function App() {
 }`,
     // The actual component code, making sure the filename matches the import in App.tsx
     [`/${displayComponentName}.tsx`]: {
-      code: componentCodeString,
+      code: processedComponentCode, // Use processed code
       readOnly: false, // Allow users to tinker with the component code itself
       active: true, // Make this file active by default
     },
@@ -140,6 +186,7 @@ export default function App() {
       <SandpackDisplay
         sandpackFiles={sandpackFiles}
         displayComponentName={displayComponentName}
+        customSetup={customSetup} // Pass customSetup
       />
       {/* 
         The old preview and usage sections are replaced by Sandpack.
