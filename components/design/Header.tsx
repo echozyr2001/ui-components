@@ -29,12 +29,10 @@ export function Header() {
   const [isHovered, setIsHovered] = useState<number | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
-  // 在客户端挂载后设置isMounted为true，避免SSR水合不匹配
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // 使用 useTransform 创建平滑的动画值
   const navWidth = useTransform(scrollY, [0, 700], ["90%", "30%"]);
   const backdropBlurStyle = useTransform(scrollY, [0, 500], [0, 12], {
     mixer: () => (v) => `blur(${v}px)`,
@@ -54,7 +52,6 @@ export function Header() {
     { name: "Contact", href: "#contact" },
   ];
 
-  // 导航项目的动画变体
   const itemVariants = {
     initial: { y: 0, skewY: 0 },
     hover: { y: "-110%", skewY: 6 },
@@ -68,7 +65,6 @@ export function Header() {
   return (
     <>
       <header className="hidden md:flex fixed w-full z-50 justify-center items-center top-3 text-[#2C2A25]">
-        {/* 修改 nav 元素的类名和内部结构 */}
         <motion.nav
           style={{
             width: navWidth,
@@ -81,7 +77,6 @@ export function Header() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
         >
-          {/* Logo - 使用绝对定位固定在左侧 */}
           <motion.div
             className="absolute left-6 w-12 h-8 items-center justify-center flex"
             whileHover={{ scale: 1.05 }}
@@ -89,11 +84,9 @@ export function Header() {
           >
             <Link href="/">
               <Logo />
-              {/* IB */}
             </Link>
           </motion.div>
 
-          {/* 导航菜单 - 始终居中，不受左侧元素影响 */}
           <div className="w-full flex justify-center">
             <ul className="flex items-center gap-6 text-sm mx-10">
               {navItems.map((item, index) => (
@@ -128,7 +121,6 @@ export function Header() {
                       </motion.div>
                     </span>
 
-                    {/* 添加下划线动画 */}
                     <AnimatePresence>
                       {isHovered === index && (
                         <motion.span
@@ -145,30 +137,6 @@ export function Header() {
               ))}
             </ul>
           </div>
-
-          {/* 右侧区域 - 使用绝对定位固定在右侧
-          <motion.div
-            className="absolute right-6 w-12 h-8 items-center justify-center flex"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-          >
-            <motion.div
-              className="w-8 h-8 rounded-full bg-[#A2ABB1] flex items-center justify-center"
-              whileHover={{ scale: 1.1, backgroundColor: "#8A9AA3" }}
-              transition={{ type: "spring", stiffness: 400, damping: 10 }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <rect width="16" height="16" rx="3" fill="white" />
-              </svg>
-            </motion.div>
-          </motion.div> */}
         </motion.nav>
       </header>
     </>

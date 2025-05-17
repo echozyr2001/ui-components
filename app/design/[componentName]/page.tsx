@@ -2,7 +2,8 @@ import React from "react";
 import { notFound } from "next/navigation";
 import path from "path";
 import fs from "fs/promises";
-import SandpackDisplay from "../../../components/SandpackDisplay"; // Adjusted path
+// import SandpackDisplay from "../../../components/SandpackDisplay"; // Adjusted path - REMOVED
+import { codeToHtml } from "shiki";
 
 // Define a type for the component module
 type ComponentModule = {
@@ -20,8 +21,9 @@ export default async function DesignComponentPage({
   let actualComponentName: string | null = null;
   // ComponentToShow is still needed for the direct preview if we keep it, or for type checking.
   // For Sandpack, we primarily need the code string.
-  // let ComponentToShow: React.ComponentType<any> | null = null;
+  let ComponentToShow: React.ComponentType<any> | null = null; // RESTORED for direct preview
   let componentCodeString: string | null = null;
+  let highlightedCodeHtml: string | null = null; // For shiki output
 
   try {
     const designDirPath = path.join(process.cwd(), "components/design");
@@ -47,17 +49,30 @@ export default async function DesignComponentPage({
       return; // Ensure notFound stops execution here
     }
 
-    // Dynamically import the component using the actual file name (still useful for metadata or if we want a non-Sandpack preview too)
-    // const componentModule = (await import(
-    //   `@/components/design/${actualComponentName}`
-    // )) as ComponentModule;
-    // ComponentToShow = componentModule.default;
+    // Dynamically import the component using the actual file name
+    const componentModule = (await import(
+      `@/components/design/${actualComponentName}`
+    )) as any; // Use 'any' for more flexible access, or define a more complex type
 
-    // Read the component's code for Sandpack
+    // Try to get the default export, then try a named export matching the component name
+    if (componentModule.default) {
+      ComponentToShow = componentModule.default;
+    } else if (componentModule[actualComponentName]) {
+      ComponentToShow = componentModule[actualComponentName];
+    } else {
+      // If neither default nor named export matching the name is found, log an error
+      console.error(
+        `No default or matching named export found for ${actualComponentName} in module:`,
+        componentModule
+      );
+      // ComponentToShow will remain null, leading to the notFound() path
+    }
+
+    // Read the component's code
     const componentFilePath = path.join(
       process.cwd(),
       "components/design",
-      `${actualComponentName}.tsx`
+      `${actualComponentName}.tsx` // Assuming .tsx, adjust if .jsx is also possible and needs different handling for shiki
     );
     componentCodeString = await fs.readFile(componentFilePath, "utf-8");
   } catch (error) {
@@ -71,50 +86,41 @@ export default async function DesignComponentPage({
     return; // Ensure notFound stops execution here
   }
 
-  // if (!ComponentToShow) { // If we remove ComponentToShow for direct preview
-  //   notFound();
-  //   return;
-  // }
-  if (!componentCodeString) {
-    // Check if code string was loaded
+  if (!ComponentToShow || !componentCodeString) {
+    // Check both ComponentToShow and code string
     console.error(
-      `Component code for "${actualComponentName}" could not be read.`
+      `Component or code for "${actualComponentName}" could not be loaded.`
     );
     notFound();
     return;
   }
 
-  // Use actualComponentName for display and import paths
-  const displayComponentName = actualComponentName; // Should be guaranteed to be non-null here
+  // Use actualComponentName for display
+  const displayComponentName = actualComponentName;
 
   let processedComponentCode = componentCodeString;
-  let customSetup: Record<string, any> | undefined = undefined;
+  // let customSetup: Record<string, any> | undefined = undefined; // REMOVED as it was for Sandpack
 
-  // Specific modifications for Header component
+  // Specific modifications for Header component (and potentially others)
+  // This processing is for the code that will be displayed.
   if (actualComponentName === "Header") {
-    customSetup = {
-      dependencies: {
-        "framer-motion": "latest", // Assuming motion/react is framer-motion
-      },
-    };
-    // Modify component code for Sandpack
+    // customSetup = { // REMOVED
+    //   dependencies: {
+    //     "framer-motion": "latest",
+    //   },
+    // };
     if (processedComponentCode) {
-      // Replace framer-motion import path
       processedComponentCode = processedComponentCode.replace(
         /from "motion\/react";/g,
         'from "framer-motion";'
       );
-
-      // Replace next/link
       processedComponentCode = processedComponentCode.replace(
         /import Link from "next\/link";/g,
-        '// import Link from "next/link";'
+        '// import Link from "next/link"; (replaced with <a> for standalone display)'
       );
-      // Replace <Link ...> with <a ...> - basic replacement
-      // More robust regex might be needed for complex Link props
       processedComponentCode = processedComponentCode.replace(
-        /<Link([^>]*?)>/g,
-        "<a$1>"
+        /<Link([^>]*?)href=(["'])([^"']*)\2([^>]*?)>/g,
+        "<a$1href=$2$3$2$4>"
       );
       processedComponentCode = processedComponentCode.replace(
         /<\/Link>/g,
@@ -123,54 +129,35 @@ export default async function DesignComponentPage({
     }
   }
 
-  // Ensure a default export for Sandpack's App.tsx if the original component doesn't have one
+  // Ensure a default export for the displayed code if the original component doesn't have one
+  // This makes the displayed code snippet more self-contained if copied.
   if (
     processedComponentCode &&
-    !componentCodeString.includes("export default")
+    !componentCodeString.includes("export default") &&
+    !processedComponentCode.includes(`export default ${displayComponentName};`) // Avoid double-adding
   ) {
-    // Check original string for "export default"
-    // Add a default export to the processed code if it's a named export
-    // Assumes the main named export has the same name as the file (displayComponentName)
-    processedComponentCode += `\n\nexport default ${displayComponentName};`;
+    processedComponentCode += `\n\n// Added for standalone display purposes:\nexport default ${displayComponentName};`;
   }
 
-  const componentDescription = `This is a brief description for the ${displayComponentName} component. It showcases its basic functionality and usage. Interact with the code below!`;
+  // Highlight code with shiki
+  try {
+    highlightedCodeHtml = await codeToHtml(processedComponentCode, {
+      lang: "tsx",
+      theme: "github-dark", // You can choose other themes like 'nord', 'material-theme-palenight', etc.
+      // themes: { // Or provide multiple themes for light/dark mode
+      //   light: 'github-light',
+      //   dark: 'github-dark',
+      // },
+    });
+  } catch (error) {
+    console.error("Failed to highlight code with shiki:", error);
+    // Fallback to pre/code if shiki fails
+    highlightedCodeHtml = `<pre><code>${processedComponentCode
+      .replace(/</g, "<")
+      .replace(/>/g, ">")}</code></pre>`;
+  }
 
-  // Sandpack files configuration
-  const sandpackFiles = {
-    // Entry point for Sandpack, uses the component
-    "/App.tsx": `import React from 'react';
-import ${displayComponentName} from './${displayComponentName}'; // Sandpack internal path
-// You might want to add a global stylesheet if your components rely on it
-// import './styles.css'; 
-
-export default function App() {
-  return (
-    <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100%' }}>
-      <${displayComponentName} />
-    </div>
-  );
-}`,
-    // The actual component code, making sure the filename matches the import in App.tsx
-    [`/${displayComponentName}.tsx`]: {
-      code: processedComponentCode, // Use processed code
-      readOnly: false, // Allow users to tinker with the component code itself
-      active: true, // Make this file active by default
-    },
-    // Example of a global stylesheet for Sandpack, if needed
-    // "/styles.css": {
-    //   code: \`body { font-family: sans-serif; }\`,
-    //   hidden: true,
-    // },
-  };
-
-  // const usageCode = \`import ${displayComponentName} from '@/components/design/${displayComponentName}';
-
-  // export default function MyPage() {
-  //   return (
-  //     <${displayComponentName} />
-  //   );
-  // }\`;
+  const componentDescription = `This is a brief description for the ${displayComponentName} component. It showcases its basic functionality and usage.`;
 
   return (
     <div style={{ padding: "20px" }}>
@@ -183,21 +170,33 @@ export default function App() {
         <p>{componentDescription}</p>
       </section>
 
-      <SandpackDisplay
-        sandpackFiles={sandpackFiles}
-        displayComponentName={displayComponentName}
-        customSetup={customSetup} // Pass customSetup
-      />
-      {/* 
-        The old preview and usage sections are replaced by Sandpack.
-        If you still want a static preview outside Sandpack, you'd need ComponentToShow.
-        For now, we rely entirely on Sandpack.
-      */}
+      <section
+        style={{
+          marginBottom: "30px",
+          border: "1px solid #eee",
+          padding: "20px",
+          borderRadius: "8px",
+        }}
+      >
+        <h2 style={{ fontSize: "1.5em", marginBottom: "10px" }}>Preview</h2>
+        <ComponentToShow />
+      </section>
+
+      <section style={{ marginBottom: "30px" }}>
+        <h2 style={{ fontSize: "1.5em", marginBottom: "10px" }}>
+          Component Code
+        </h2>
+        {/* Render shiki's HTML output */}
+        {highlightedCodeHtml && (
+          <div dangerouslySetInnerHTML={{ __html: highlightedCodeHtml }} />
+        )}
+      </section>
+      {/* Props documentation will be added in the next phase */}
     </div>
   );
 }
 
-// Optional: Generate static paths if you know all component names at build time
+// Optional: Generate static paths
 // This improves performance by pre-rendering these pages.
 export async function generateStaticParams() {
   try {
